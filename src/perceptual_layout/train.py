@@ -28,12 +28,12 @@ def to_dev(b, dev):
 
 
 @torch.no_grad()
-def evaluate(model, data, k, sn, se, dev, batch=32, seed=0):
+def evaluate(model, data, k, sn, se, dev, batch=32, seed=0, spacing=None):
     model.eval()
     rng, g = random.Random(seed), torch.Generator().manual_seed(seed)
     L, Y = [], []
     for i in range(0, len(data), batch):
-        b = to_dev(collate(data[i:i + batch], k, sn, se, rng), dev)
+        b = to_dev(collate(data[i:i + batch], k, sn, se, rng, spacing=spacing), dev)
         logits = model(**observe(b, g))
         L.append(logits[b["pair_mask"]].cpu())
         Y.append(b["A"][b["pair_mask"]].cpu())
@@ -47,6 +47,9 @@ def main():
     ap.add_argument("--n-min", type=int, default=10)
     ap.add_argument("--n-max", type=int, default=50)
     ap.add_argument("--k", type=int, default=16, help="edge-dots per edge; keep FIXED across train/calibrate/optimize")
+    ap.add_argument("--spacing", type=float, default=None,
+                    help="constant edge-dot spacing in normalized units (overrides --k); ~0.027 matches k=16 "
+                         "on a median edge. Saved in the checkpoint and reused by calibrate/optimize")
     ap.add_argument("--sigma-node", type=float, nargs=2, default=[0.005, 0.08])
     ap.add_argument("--sigma-edge", type=float, nargs=2, default=[0.002, 0.04])
     ap.add_argument("--samples", type=int, default=2, help="blur samples per step")
@@ -86,7 +89,8 @@ def main():
         rng.shuffle(train)
         total, nb = 0.0, 0
         for i in range(0, len(train), args.batch):
-            b = to_dev(collate(train[i:i + args.batch], args.k, sn_range, se_range, rng, augment=True), dev)
+            b = to_dev(collate(train[i:i + args.batch], args.k, sn_range, se_range, rng, augment=True,
+                               spacing=args.spacing), dev)
             loss = sum(pair_loss(model(**observe(b)), b["A"], b["pair_mask"])
                        for _ in range(args.samples)) / args.samples
             opt.zero_grad()
@@ -96,7 +100,8 @@ def main():
 
         # Psychometric sanity check: AUC MUST fall as blur grows.
         # If it is flat, the observer is ignoring the noise and is not a model of perception.
-        curve = {s: evaluate(model, val, args.k, sn_mid * s, se_mid * s, dev)["auc"] for s in SIGMA_SCALES}
+        curve = {s: evaluate(model, val, args.k, sn_mid * s, se_mid * s, dev, spacing=args.spacing)["auc"]
+                 for s in SIGMA_SCALES}
         row = dict(epoch=epoch, train_loss=total / max(nb, 1), auc_vs_sigma_scale=curve)
         log.append(row)
         print(json.dumps(row))

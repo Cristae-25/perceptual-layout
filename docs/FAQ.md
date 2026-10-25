@@ -114,7 +114,10 @@ What the figures showed (2026-10-24):
 - **Circular layout** shows the difference most. With fixed k, the long chords across the circle are faint and the short arcs along the rim are solid, so a person mostly sees the rim. With constant spacing, every chord is a visible line, which matches how a real drawing looks.
 - **Dropout at 0.5** makes every edge look dashed. At 2× blur and above, trails mostly disappear in all four rows; dropout reaches that point about one blur step earlier.
 - **B pairs** (close but not connected) look connected at almost every setting, which is the distance shortcut in action. The model needs layouts where neighbours are far apart to learn not to rely on distance.
-These sampling options are preview-only (`edge_dots()` in `visualize.py`); training still uses fixed k.
+Constant spacing is now a training option (`train.py --spacing 0.027`); dropout is still preview-only (`edge_dots()` in `visualize.py`).
+
+**Q: How do I train with constant spacing?**
+`python -m perceptual_layout.train ... --spacing 0.027`. Each edge gets `round(length / spacing) − 1` interior dots (at least 1), placed evenly, so every edge has the same dot density. 0.027 gives about the same number of dots as k = 16 on a median-length edge; long edges get more dots and short edges fewer. Leaving out `--spacing` keeps the old fixed k. The value is saved in the checkpoint, and `calibrate.py` and `optimize.py` read it from there. Dot *counts* carry no gradient, but dot *positions* still do. During layout optimization the count changes in jumps as an edge stretches, and the gradient can't see those jumps.
 
 **Q: How do I make the pipeline and blur figures?**
 `python -m perceptual_layout.visualize --out runs/figures --log runs/<run>/log.json` writes:

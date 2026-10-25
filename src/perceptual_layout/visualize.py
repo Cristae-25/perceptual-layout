@@ -9,7 +9,7 @@
 5_auc_vs_sigma.png  psychometric curve from a train.py log (if --log is given)
 6_sampling_*.png  eye-check: edge-dot sampling variants (fixed k, dropout, constant spacing) x blur
 
-The sampling variants in section 6 are preview-only; training still uses fixed k (points.py).
+Fixed k and constant spacing come from points.py (train.py --spacing); dropout is preview-only.
 """
 from __future__ import annotations
 
@@ -54,19 +54,13 @@ def draw(ax, s, k, sigma_node, sigma_edge, seed=0, title=None, show_drawing=True
 
 
 def edge_dots(pos, edges, mode, k, spacing, keep, gen):
-    """Clean edge-dot xy for one sampling variant (preview only, not used in training).
+    """Clean edge-dot xy for one sampling variant.
 
-    mode "fixed": k evenly spaced interior dots per edge (what points.py does).
-    mode "spacing": about one dot every `spacing` units, so density is the same on every edge.
-    keep < 1: drop each dot independently (training-time dropout augmentation).
+    mode "fixed" / "spacing": layout_to_points with fixed k or constant spacing.
+    keep < 1: drop each dot independently (dropout preview only; not in training).
     """
-    xy = []
-    for i, j in edges.tolist():
-        a, b = pos[i], pos[j]
-        n = k if mode == "fixed" else max(1, round(float((b - a).norm()) / spacing) - 1)
-        t = torch.linspace(0, 1, n + 2)[1:-1, None]
-        xy.append((1 - t) * a + t * b)
-    xy = torch.cat(xy) if xy else pos.new_zeros(0, 2)
+    _, e = layout_to_points(pos, edges, k, 0.0, 0.0, shuffle=False, spacing=spacing if mode == "spacing" else None)
+    xy = e[:, :2]
     if keep < 1:
         xy = xy[torch.rand(len(xy), generator=gen) < keep]
     return xy

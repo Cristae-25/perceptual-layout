@@ -20,12 +20,13 @@ from .observer import load_observer
 from .points import normalize_layout, observe, points_batch
 
 
-def recovery_loss(model, pos, sample, k, sn, se, samples=4):
-    b = points_batch([pos], [sample.edges], k, sn, se, normalize=False, A_list=[sample.A])
+def recovery_loss(model, pos, sample, k, sn, se, samples=4, spacing=None):
+    b = points_batch([pos], [sample.edges], k, sn, se, normalize=False, A_list=[sample.A], spacing=spacing)
     return sum(pair_loss(model(**observe(b)), b["A"], b["pair_mask"]) for _ in range(samples)) / samples
 
 
-def optimize_layout(model, sample, k, sn, se, steps=500, lr=5e-3, w_stress=0.1, samples=4, log_every=50):
+def optimize_layout(model, sample, k, sn, se, steps=500, lr=5e-3, w_stress=0.1, samples=4, log_every=50,
+                    spacing=None):
     G = nx.Graph(sample.edges.tolist())
     N = sample.pos.shape[0]
     G.add_nodes_from(range(N))
@@ -35,7 +36,7 @@ def optimize_layout(model, sample, k, sn, se, steps=500, lr=5e-3, w_stress=0.1, 
     history = []
     for step in range(steps):
         p = normalize_layout(pos)  # fixed box every pass, as in training
-        rec = recovery_loss(model, p, sample, k, sn, se, samples)
+        rec = recovery_loss(model, p, sample, k, sn, se, samples, spacing)
         st = stress(p, D)
         loss = rec + w_stress * st
         opt.zero_grad()
@@ -74,7 +75,8 @@ def main():
     edges_np = sample.edges.numpy()
 
     before = summary(sample.pos.numpy(), edges_np)
-    pos, hist = optimize_layout(model, sample, cfg["k"], sn, se, args.steps, args.lr, args.w_stress, args.samples)
+    pos, hist = optimize_layout(model, sample, cfg["k"], sn, se, args.steps, args.lr, args.w_stress, args.samples,
+                                spacing=cfg.get("spacing"))
     after = summary(pos.numpy(), edges_np)
     print("before:", before)
     print("after: ", after)

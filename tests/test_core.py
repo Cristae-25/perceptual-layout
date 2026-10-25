@@ -78,3 +78,31 @@ def test_no_sigma_feature_hides_sigma_but_keeps_its_gradient():
     b = points_batch([s.pos], [s.edges], 8, sig, sig, A_list=[s.A])
     pair_loss(model(**observe(b)), b["A"], b["pair_mask"]).backward()
     assert sig.grad is not None and torch.isfinite(sig.grad) and sig.grad != 0
+
+
+def test_fixed_k_matches_linspace():
+    s = small()[0]
+    _, e = layout_to_points(s.pos, s.edges, k=5, sigma_node=0.0, sigma_edge=0.0, shuffle=False)
+    t = torch.linspace(0, 1, 7)[1:-1].view(1, 5, 1)
+    a, b = s.pos[s.edges[:, 0]], s.pos[s.edges[:, 1]]
+    expected = ((1 - t) * a[:, None] + t * b[:, None]).reshape(-1, 2)
+    assert torch.allclose(e[:, :2], expected, atol=1e-6)
+
+
+def test_constant_spacing_density_and_gradient():
+    pos = torch.tensor([[0.0, 0.0], [0.2, 0.0], [0.0, 1.0]], requires_grad=True)
+    edges = torch.tensor([[0, 1], [0, 2]])  # lengths 0.2 and 1.0
+    _, e = layout_to_points(pos, edges, k=16, sigma_node=0.0, sigma_edge=0.0, shuffle=False, spacing=0.05)
+    on_short = e[:, 1].abs() < 1e-6
+    assert on_short.sum() == 3 and (~on_short).sum() == 19  # round(L/0.05) - 1 interior dots
+    gaps = e[~on_short, 1].diff()
+    assert torch.allclose(gaps, torch.full_like(gaps, 0.05), atol=1e-5)
+    e[:, :2].sum().backward()
+    assert pos.grad is not None and pos.grad.abs().sum() > 0
+
+
+def test_spacing_threads_through_batch():
+    data = small()
+    b = collate(data, 8, 0.0, 0.0, random.Random(0), spacing=0.05)
+    out = PointNetObserver(d=32).eval()(**observe(b))
+    assert out.shape == b["A"].shape and torch.isfinite(out).all()

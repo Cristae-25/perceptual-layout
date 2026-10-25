@@ -33,9 +33,26 @@ def random_rotation(pos: torch.Tensor, generator: torch.Generator | None = None)
     return pos @ R.T
 
 
-def layout_to_points(pos, edges, k: int = 16, sigma_node=0.03, sigma_edge=0.01, shuffle: bool = True):
+def edge_dot_counts(pos, edges, k: int = 16, spacing: float | None = None) -> torch.Tensor:
+    """Interior dots per edge, (E,) long.
+
+    spacing None: k on every edge, so density is k / length (long edges look sparser).
+    spacing s: about one dot every s units (normalized), so every edge has the same
+    density, like ink on a screen. Counts are integers and carry no gradient; the dot
+    positions still do.
+    """
+    if spacing is None:
+        return torch.full((edges.shape[0],), k, dtype=torch.long, device=pos.device)
+    with torch.no_grad():
+        length = (pos[edges[:, 1]] - pos[edges[:, 0]]).norm(dim=1)
+        return (torch.round(length / spacing).long() - 1).clamp_min(1)
+
+
+def layout_to_points(pos, edges, k: int = 16, sigma_node=0.03, sigma_edge=0.01, shuffle: bool = True,
+                     spacing: float | None = None):
     """pos: (N,2), may require grad. edges: (E,2) long.
     sigma_node / sigma_edge: float or 0-d tensor (a tensor lets you fit sigma).
+    spacing: None = k dots per edge; a float = constant spacing (see edge_dot_counts).
 
     Returns (node_pts (N,4), edge_pts (E*k,4)). Node-dots are in node-index
     order (so pair (i,j) can be read out); edge-dots are shuffled and carry
@@ -48,10 +65,14 @@ def layout_to_points(pos, edges, k: int = 16, sigma_node=0.03, sigma_edge=0.01, 
     if edges.numel() == 0:
         return node_pts, pos.new_zeros(0, 4)
 
-    # k interior samples per edge, endpoints excluded (endpoints are node-dots)
-    t = torch.linspace(0, 1, k + 2, device=pos.device, dtype=pos.dtype)[1:-1].view(1, k, 1)
-    a, b = pos[edges[:, 0]], pos[edges[:, 1]]
-    xy = ((1 - t) * a[:, None, :] + t * b[:, None, :]).reshape(-1, 2)
+    # n_e interior samples per edge, evenly spaced, endpoints excluded (endpoints are node-dots)
+    counts = edge_dot_counts(pos, edges, k, spacing)
+    eid = torch.repeat_interleave(torch.arange(edges.shape[0], device=pos.device), counts)
+    start = torch.cumsum(counts, 0) - counts
+    step = torch.arange(eid.shape[0], device=pos.device) - start[eid] + 1   # 1..n_e within each edge
+    t = (step.to(pos.dtype) / (counts[eid] + 1).to(pos.dtype))[:, None]
+    a, b = pos[edges[eid, 0]], pos[edges[eid, 1]]
+    xy = (1 - t) * a + t * b
     ones_m = pos.new_ones(xy.shape[0], 1)
     edge_pts = torch.cat([xy, ones_m * sigma_edge, ones_m * EDGE], dim=1)
     if shuffle:
@@ -86,7 +107,7 @@ def _stack_padded(rows: list[torch.Tensor]):
 
 
 def points_batch(pos_list, edges_list, k=16, sigma_node=0.03, sigma_edge=0.01,
-                 normalize=True, A_list=None):
+                 normalize=True, A_list=None, spacing=None):
     """Build a padded batch from several layouts.
 
     sigma_node / sigma_edge: a single value, or a list with one value per graph.
@@ -99,7 +120,7 @@ def points_batch(pos_list, edges_list, k=16, sigma_node=0.03, sigma_edge=0.01,
     nodes, edges_ = [], []
     for b in range(B):
         p = normalize_layout(pos_list[b]) if normalize else pos_list[b]
-        n, e = layout_to_points(p, edges_list[b], k, sn[b], se[b])
+        n, e = layout_to_points(p, edges_list[b], k, sn[b], se[b], spacing=spacing)
         nodes.append(n)
         edges_.append(e)
     node_pts, node_mask = _stack_padded(nodes)

@@ -75,7 +75,7 @@ docs/PLAN.md    timeline, milestones, risks
 
 - Positions are normalized (centred, max |coordinate| = 1) before entering the observer; all σ are in those units.
 - Edge-dots carry no edge identity. Node-dots come first, in node-index order.
-- `k` (dots per edge) must stay fixed across training, calibration and optimization.
+- Edge-dot sampling (`k` dots per edge, or `--spacing` for constant density) must stay the same across training, calibration and optimization. Both are saved in the checkpoint.
 - Any model swap (DGCNN, PointNet++) keeps `forward(node_pts, node_mask, edge_pts, edge_mask) -> (B,N,N) logits`.
 
 ## Status

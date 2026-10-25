@@ -109,9 +109,9 @@ def _pick_sigma(spec, rng: random.Random):
     return spec
 
 
-def collate(samples, k, sigma_node, sigma_edge, rng: random.Random, augment=False):
+def collate(samples, k, sigma_node, sigma_edge, rng: random.Random, augment=False, spacing=None):
     pos = [random_rotation(s.pos) if augment else s.pos for s in samples]
     sn = [_pick_sigma(sigma_node, rng) for _ in samples]
     se = [_pick_sigma(sigma_edge, rng) for _ in samples]
     return points_batch(pos, [s.edges for s in samples], k, sn, se,
-                        normalize=True, A_list=[s.A for s in samples])
+                        normalize=True, A_list=[s.A for s in samples], spacing=spacing)
