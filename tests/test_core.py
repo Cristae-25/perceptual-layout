@@ -64,3 +64,17 @@ def test_blur_is_real():
     pts = torch.zeros(1, 100, 4)
     pts[..., 2] = 0.1
     assert perceive(pts)[..., :2].std() > 0.05
+
+
+def test_no_sigma_feature_hides_sigma_but_keeps_its_gradient():
+    s = small()[0]
+    model = PointNetObserver(d=32, sigma_feature=False).eval()
+    b_lo = points_batch([s.pos], [s.edges], 8, 0.01, 0.01)
+    b_hi = points_batch([s.pos], [s.edges], 8, 0.05, 0.05)
+    # same dot positions, different sigma column: output must not change
+    assert torch.allclose(model(**b_lo), model(**b_hi), atol=1e-6)
+
+    sig = torch.tensor(0.02, requires_grad=True)
+    b = points_batch([s.pos], [s.edges], 8, sig, sig, A_list=[s.A])
+    pair_loss(model(**observe(b)), b["A"], b["pair_mask"]).backward()
+    assert sig.grad is not None and torch.isfinite(sig.grad) and sig.grad != 0

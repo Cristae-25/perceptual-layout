@@ -50,6 +50,8 @@ def main():
     ap.add_argument("--sigma-node", type=float, nargs=2, default=[0.005, 0.08])
     ap.add_argument("--sigma-edge", type=float, nargs=2, default=[0.002, 0.04])
     ap.add_argument("--samples", type=int, default=2, help="blur samples per step")
+    ap.add_argument("--no-sigma-feature", action="store_true",
+                    help="ablation: blur the dots but hide sigma from the observer")
     ap.add_argument("--d", type=int, default=256)
     ap.add_argument("--batch", type=int, default=32)
     ap.add_argument("--lr", type=float, default=1e-3)
@@ -72,7 +74,7 @@ def main():
     val = make_dataset(args.n_val, args.n_min, args.n_max, seed=args.seed + 1)
     print(f"data: {len(train)} train / {len(val)} val in {time.time() - t0:.0f}s")
 
-    model = PointNetObserver(d=args.d).to(dev)
+    model = PointNetObserver(d=args.d, sigma_feature=not args.no_sigma_feature).to(dev)
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
     sn_range, se_range = tuple(args.sigma_node), tuple(args.sigma_edge)
     sn_mid = (sn_range[0] * sn_range[1]) ** 0.5

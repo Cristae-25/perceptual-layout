@@ -21,8 +21,11 @@ class PointNetObserver(nn.Module):
     keep this forward() signature so the rest of the repo does not change).
     """
 
-    def __init__(self, d: int = 256, d_local: int = 64):
+    def __init__(self, d: int = 256, d_local: int = 64, sigma_feature: bool = True):
         super().__init__()
+        # False: zero the sigma column so the observer must infer blur from the jitter alone.
+        # Sigma still acts (and still gets gradients) through perceive().
+        self.sigma_feature = sigma_feature
         self.local = mlp(4, 64, d_local)          # shared per-point
         self.deep = mlp(d_local, 128, d)          # shared per-point, then max-pool
         self.node = mlp(d_local + d, d, d)        # node-dot local + global context
@@ -30,6 +33,9 @@ class PointNetObserver(nn.Module):
 
     def forward(self, node_pts, node_mask, edge_pts, edge_mask):
         """node_pts (B,N,4), edge_pts (B,M,4), masks True = real. Returns logits (B,N,N)."""
+        if not self.sigma_feature:
+            node_pts = torch.cat([node_pts[..., :2], torch.zeros_like(node_pts[..., 2:3]), node_pts[..., 3:]], dim=-1)
+            edge_pts = torch.cat([edge_pts[..., :2], torch.zeros_like(edge_pts[..., 2:3]), edge_pts[..., 3:]], dim=-1)
         pts = torch.cat([node_pts, edge_pts], dim=1)
         mask = torch.cat([node_mask, edge_mask], dim=1)
 
@@ -51,7 +57,7 @@ class PointNetObserver(nn.Module):
 def load_observer(path: str, device="cpu"):
     ckpt = torch.load(path, map_location=device)
     cfg = ckpt["config"]
-    model = PointNetObserver(d=cfg["d"]).to(device)
+    model = PointNetObserver(d=cfg["d"], sigma_feature=not cfg.get("no_sigma_feature", False)).to(device)
     model.load_state_dict(ckpt["state_dict"])
     model.eval()
     for p in model.parameters():

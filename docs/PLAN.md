@@ -53,7 +53,8 @@ swap phases 4 and 5 (scaling does not need humans).
 ## Experiments to log (one row each in W&B / TensorBoard)
 
 - AUC vs σ curve, per graph family and per layout type
-- Ablation: σ as feature only vs feature + jitter (expect feature-only to ignore σ)
+- Ablation: σ as feature only vs feature + jitter vs jitter only (`train.py --no-sigma-feature`); expect feature-only to ignore σ
+- Edge-dot density: fixed `k` per edge (long edges sparser) vs constant spacing by length; edge-dot dropout as augmentation
 - `k` (dots per edge): 8 / 16 / 32
 - Pair-head input: with vs without node distance (does it shortcut to "close nodes are connected"?)
 - Optimization: `w_stress` sweep; crossings, shallow crossings, occlusions before/after
