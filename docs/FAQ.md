@@ -107,6 +107,15 @@ Two different fixes, for two different problems:
 - **Random dropout (augmentation, robustness):** keep each edge-dot with probability p (e.g. p drawn from [0.5, 1] per graph) during *training only*. This stops the observer relying on exact counts or spacing and acts as a rough model of partial occlusion or attention lapses. It doesn't fix the density artifact, because it thins short and long edges equally. Keep all dots at evaluation, calibration and optimization, or the observer sees something different from what humans see.
 Recommendation: first measure whether it matters, by checking AUC on short vs long edges after the full training run. If long edges lag, switch to constant spacing. Add dropout later if the observer looks fragile.
 
+**Q: How can I eye-check the sampling options before training?**
+Run `visualize` and look at `6_sampling_kk.png`, `6_sampling_circular.png` and `6_sampling_random.png`. Rows are the sampling options: fixed k (current), fixed k + 50% dropout, constant spacing, and constant spacing + 50% dropout. Constant spacing is tuned to give the same total number of dots as fixed k. Columns are blur levels (0×, 0.5×, 1×, 2× and 4× the middle of the training range). Two node pairs are circled: **A** is the longest true edge (the sparsest trail) and **B** is the closest pair that is *not* connected (it looks connected). The answer key is at the bottom.
+The rule behind it: if a case is hard for a person to read, the observer should find it hard too. If the observer finds something easy that a person can't see, it's probably using a shortcut.
+What the figures showed (2026-10-24):
+- **Circular layout** shows the difference most. With fixed k, the long chords across the circle are faint and the short arcs along the rim are solid, so a person mostly sees the rim. With constant spacing, every chord is a visible line, which matches how a real drawing looks.
+- **Dropout at 0.5** makes every edge look dashed. At 2× blur and above, trails mostly disappear in all four rows; dropout reaches that point about one blur step earlier.
+- **B pairs** (close but not connected) look connected at almost every setting, which is the distance shortcut in action. The model needs layouts where neighbours are far apart to learn not to rely on distance.
+These sampling options are preview-only (`edge_dots()` in `visualize.py`); training still uses fixed k.
+
 **Q: How do I make the pipeline and blur figures?**
 `python -m perceptual_layout.visualize --out runs/figures --log runs/<run>/log.json` writes:
 1. `1_gallery.png`: every graph type × layout method, dots over the true drawing (σ = 0)

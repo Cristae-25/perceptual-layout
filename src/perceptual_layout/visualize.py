@@ -7,6 +7,9 @@
 3_sigma_sweep.png same graph, both sigmas scaled together across the training range
 4_rome.png        a Rome graph through the same pipeline
 5_auc_vs_sigma.png  psychometric curve from a train.py log (if --log is given)
+6_sampling_*.png  eye-check: edge-dot sampling variants (fixed k, dropout, constant spacing) x blur
+
+The sampling variants in section 6 are preview-only; training still uses fixed k (points.py).
 """
 from __future__ import annotations
 
@@ -48,6 +51,75 @@ def draw(ax, s, k, sigma_node, sigma_edge, seed=0, title=None, show_drawing=True
     ax.set_yticks([])
     if title:
         ax.set_title(title, fontsize=8)
+
+
+def edge_dots(pos, edges, mode, k, spacing, keep, gen):
+    """Clean edge-dot xy for one sampling variant (preview only, not used in training).
+
+    mode "fixed": k evenly spaced interior dots per edge (what points.py does).
+    mode "spacing": about one dot every `spacing` units, so density is the same on every edge.
+    keep < 1: drop each dot independently (training-time dropout augmentation).
+    """
+    xy = []
+    for i, j in edges.tolist():
+        a, b = pos[i], pos[j]
+        n = k if mode == "fixed" else max(1, round(float((b - a).norm()) / spacing) - 1)
+        t = torch.linspace(0, 1, n + 2)[1:-1, None]
+        xy.append((1 - t) * a + t * b)
+    xy = torch.cat(xy) if xy else pos.new_zeros(0, 2)
+    if keep < 1:
+        xy = xy[torch.rand(len(xy), generator=gen) < keep]
+    return xy
+
+
+def query_pairs(s):
+    """A = the longest true edge (sparsest trail); B = the closest non-adjacent pair (looks connected)."""
+    pos = normalize_layout(s.pos)
+    D = torch.cdist(pos, pos)
+    e = s.edges
+    a = e[D[e[:, 0], e[:, 1]].argmax()].tolist()
+    non = D.masked_fill(s.A.bool() | torch.eye(len(pos), dtype=torch.bool), float("inf"))
+    flat = non.argmin()
+    return a, [int(flat // len(pos)), int(flat % len(pos))]
+
+
+def sampling_figure(out, s, name, k, sn_mid, se_mid, scales, keep=0.5, seed=0):
+    pos = normalize_layout(s.pos)
+    lengths = (pos[s.edges[:, 0]] - pos[s.edges[:, 1]]).norm(dim=1)
+    spacing = float(lengths.sum()) / (len(lengths) * (k + 1))  # same total dots as fixed k
+    variants = [("fixed k (current)", "fixed", 1.0), (f"fixed k + dropout {keep:g}", "fixed", keep),
+                ("constant spacing", "spacing", 1.0), (f"constant spacing + dropout {keep:g}", "spacing", keep)]
+    A_pair, B_pair = query_pairs(s)
+    fig, axes = plt.subplots(len(variants), len(scales), figsize=(2.3 * len(scales), 2.45 * len(variants)))
+    for r, (label, mode, kp) in enumerate(variants):
+        clean = edge_dots(pos, s.edges, mode, k, spacing, kp, torch.Generator().manual_seed(seed))
+        for c, m in enumerate(scales):
+            g = torch.Generator().manual_seed(seed + c)
+            nodes = pos + sn_mid * m * torch.randn(pos.shape, generator=g)
+            dots = clean + se_mid * m * torch.randn(clean.shape, generator=g)
+            ax = axes[r, c]
+            ax.scatter(*dots.T, s=2, color=EDGE_C, lw=0)
+            ax.scatter(*nodes.T, s=12, color=NODE_C, lw=0, zorder=2)
+            for tag, (i, j), col in (("A", A_pair, "#edae49"), ("B", B_pair, "#7b2cbf")):
+                for v in (i, j):
+                    ax.scatter(*nodes[v], s=90, facecolors="none", edgecolors=col, lw=1.3, zorder=3)
+                ax.annotate(tag, nodes[i], xytext=(4, 4), textcoords="offset points", fontsize=7, color=col)
+            ax.set_xlim(-1.3, 1.3)  # wider than draw(): 4x blur pushes nodes past +/-1
+            ax.set_ylim(-1.3, 1.3)
+            ax.set_aspect("equal")
+            ax.set_xticks([])
+            ax.set_yticks([])
+            if r == 0:
+                ax.set_title(f"{m:g}x  (node {sn_mid * m:.3f}, edge {se_mid * m:.3f})", fontsize=8)
+            if c == 0:
+                ax.set_ylabel(f"{label}\n{len(clean)} edge-dots", fontsize=8)
+    fig.suptitle(f"Eye-check: {s.family} graph, {s.layout} layout, N={pos.shape[0]}, E={len(s.edges)}. "
+                 "Are the A nodes connected? The B nodes?")
+    fig.text(0.5, 0.005, "Answer key: A = connected (the longest edge, sparsest trail).  "
+             "B = NOT connected (the closest non-adjacent pair).", ha="center", fontsize=8, color="#555555")
+    fig.tight_layout(rect=(0, 0.02, 1, 1))
+    fig.savefig(os.path.join(out, name), dpi=160)
+    plt.close(fig)
 
 
 def gallery(out, k, n_nodes, seed):
@@ -161,6 +233,13 @@ def main():
                     f" on a Rome graph (N={G.number_of_nodes()}, E={G.number_of_edges()})")
     else:
         print(f"no GraphML files in {args.rome}; skipping Rome figure")
+
+    scales = [0, 0.5, 1, 2, 4]
+    sampling_figure(args.out, s, "6_sampling_kk.png", args.k, sn_mid, se_mid, scales, seed=args.seed)
+    G, fam = random_graph(args.n, random.Random(args.seed + 2))
+    for name in ("circular", "random"):  # long edges and shallow crossings: the hard cases
+        h = to_sample(G, layout(G, name, args.seed), fam, name)
+        sampling_figure(args.out, h, f"6_sampling_{name}.png", args.k, sn_mid, se_mid, scales, seed=args.seed)
 
     if args.log:
         auc_curve(args.out, args.log)
