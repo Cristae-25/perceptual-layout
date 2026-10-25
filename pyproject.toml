@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "perceptual-layout"
+version = "0.0.1"
+description = "A point-based surrogate human observer for graph-layout optimization"
+requires-python = ">=3.10"
+dependencies = ["torch>=2.2", "networkx>=3.2", "numpy>=1.24", "scipy>=1.10", "matplotlib>=3.7"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+runs/
+*.pt
+data/*
+!data/README.md
+*.png
+optimized_layout.json
+calibration.json
+.ipynb_checkpoints/
+*.egg-info/
+.DS_Store
